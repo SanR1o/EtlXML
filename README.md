@@ -10,6 +10,12 @@ Este proyecto implementa un pipeline ETL robusto que:
 - Carga los datos en MSSQL de forma eficiente
 - Registra todo el proceso con logging detallado
 
+## Inicio Rápido
+
+Para instalación y ejecución paso a paso, usa esta guía:
+
+- [docs/INSTALACION.md](docs/INSTALACION.md)
+
 ## Requisitos
 
 - Python 3.7 o superior
@@ -109,6 +115,10 @@ EtlXML/
 ## Resolución de Problemas
 
 Ver carpeta `docs/` para guías detalladas sobre cada componente.
+
+Guía recomendada para instalación y uso diario:
+
+- [docs/INSTALACION.md](docs/INSTALACION.md)
 
 Logs disponibles en: `logs/etl_process.log`
 

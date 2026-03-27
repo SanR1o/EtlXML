@@ -8,6 +8,7 @@ Documentación técnica detallada de cada componente del sistema.
 
 | Documento | Descripción |
 |-----------|-------------|
+| [INSTALACION.md](INSTALACION.md) | Instalación y ejecución rápida paso a paso |
 | [CONFIG.md](CONFIG.md) | Configuración centralizada y variables de entorno |
 | [PARSER.md](PARSER.md) | Extracción de datos desde archivos XML |
 | [TRANSFORM.md](TRANSFORM.md) | Validación, limpieza y transformación de datos |
