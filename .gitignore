@@ -1,0 +1,37 @@
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Python cache y artefactos
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Variables de entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Archivos de sistema/editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Datos de trabajo (facturas XML, exportaciones temporales)
+data/*.xml
+data/*.csv
+data/*.xlsx
+
+# Build/distribucion
+build/
+dist/
+*.egg-info/
