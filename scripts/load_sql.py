@@ -69,21 +69,49 @@ class DatabaseManager:
             
             for idx, row in df.iterrows():
                 try:
+                    invoice_key = _normalize_value(row.get("invoice_key"))
+                    if not invoice_key:
+                        invoice_key = _build_invoice_key(
+                            _normalize_value(row.get("numero")),
+                            _normalize_value(row.get("periodo_facturacion")),
+                        )
                     cursor.execute(
                         """
                         INSERT INTO Facturas (
-                            numero, uuid, fecha, hora, cliente, cliente_nit,
-                            proveedor, proveedor_nit, moneda, subtotal,
-                            impuestos, total, lineas, tipo_documento
+                            invoice_key, numero, periodo_facturacion, uuid, fecha, hora,
+                            cliente, cliente_nit, proveedor, proveedor_nit,
+                            moneda, subtotal, impuestos, total, lineas,
+                            tipo_documento, source_type, source_file
                         )
                         VALUES (
                             %s, %s, %s, %s, %s, %s,
                             %s, %s, %s, %s,
-                            %s, %s, %s, %s
+                            %s, %s, %s, %s, %s,
+                            %s, %s, %s
                         )
+                        ON DUPLICATE KEY UPDATE
+                            numero = VALUES(numero),
+                            periodo_facturacion = VALUES(periodo_facturacion),
+                            uuid = VALUES(uuid),
+                            fecha = VALUES(fecha),
+                            hora = VALUES(hora),
+                            cliente = VALUES(cliente),
+                            cliente_nit = VALUES(cliente_nit),
+                            proveedor = VALUES(proveedor),
+                            proveedor_nit = VALUES(proveedor_nit),
+                            moneda = VALUES(moneda),
+                            subtotal = VALUES(subtotal),
+                            impuestos = VALUES(impuestos),
+                            total = VALUES(total),
+                            lineas = VALUES(lineas),
+                            tipo_documento = VALUES(tipo_documento),
+                            source_type = VALUES(source_type),
+                            source_file = VALUES(source_file)
                         """,
                         (
+                            invoice_key,
                             _normalize_value(row["numero"]),
+                            _normalize_value(row.get("periodo_facturacion")),
                             _normalize_value(row.get("uuid")),
                             _normalize_value(row.get("fecha")),
                             _normalize_value(row.get("hora")),
@@ -97,6 +125,8 @@ class DatabaseManager:
                             _normalize_value(row["total"]),
                             _normalize_value(row.get("lineas")),
                             _normalize_value(row.get("tipo_documento")),
+                            _normalize_value(row.get("source_type")),
+                            _normalize_value(row.get("source_file")),
                         )
                     )
                     inserted_count += 1
@@ -140,21 +170,39 @@ class DatabaseManager:
                     cursor.execute(
                         """
                         INSERT INTO FacturasDetalle (
-                            invoice_numero, orden_numero, identificacion_circuito,
-                            periodo_facturacion, descripcion, tipo_cargo
+                            invoice_key, invoice_numero, nro, orden, identificacion_circuito,
+                            periodo_facturacion, um, descripcion, tipo_cargo,
+                            impuesto, monto, source_type
                         )
                         VALUES (
-                            %s, %s, %s,
+                            %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s,
                             %s, %s, %s
                         )
+                        ON DUPLICATE KEY UPDATE
+                            orden = VALUES(orden),
+                            identificacion_circuito = VALUES(identificacion_circuito),
+                            periodo_facturacion = VALUES(periodo_facturacion),
+                            um = VALUES(um),
+                            descripcion = VALUES(descripcion),
+                            tipo_cargo = VALUES(tipo_cargo),
+                            impuesto = VALUES(impuesto),
+                            monto = VALUES(monto),
+                            source_type = VALUES(source_type)
                         """,
                         (
-                            _normalize_value(row.get("invoice_numero")),
-                            _normalize_value(row.get("orden_numero")),
+                            _normalize_value(row.get("invoice_key")) or _normalize_value(row.get("invoice_numero")),
+                            _normalize_value(row.get("invoice_numero")) or _normalize_value(row.get("invoice_key")),
+                            _normalize_value(row.get("nro")),
+                            _normalize_value(row.get("orden")),
                             _normalize_value(row.get("identificacion_circuito")),
                             _normalize_value(row.get("periodo_facturacion")),
+                            _normalize_value(row.get("um")),
                             _normalize_value(row.get("descripcion")),
                             _normalize_value(row.get("tipo_cargo")),
+                            _normalize_value(row.get("impuesto")),
+                            _normalize_value(row.get("monto")),
+                            _normalize_value(row.get("source_type")),
                         )
                     )
                     inserted_count += 1
@@ -189,7 +237,9 @@ class DatabaseManager:
     def _ensure_schema(self, conn) -> None:
         """Asegura que existan las tablas y columnas para encabezado y detalle."""
         desired_columns = {
+            "invoice_key": "VARCHAR(150) NULL",
             "numero": "VARCHAR(100) NOT NULL",
+            "periodo_facturacion": "VARCHAR(100) NULL",
             "uuid": "VARCHAR(200) NULL",
             "fecha": "DATETIME NULL",
             "hora": "VARCHAR(50) NULL",
@@ -203,17 +253,25 @@ class DatabaseManager:
             "total": "DECIMAL(18,2) NULL",
             "lineas": "INT NULL",
             "tipo_documento": "VARCHAR(50) NULL",
+            "source_type": "VARCHAR(20) NULL",
+            "source_file": "VARCHAR(255) NULL",
         }
 
         cursor = conn.cursor()
 
         desired_detail_columns = {
+            "invoice_key",
             "invoice_numero",
-            "orden_numero",
+            "nro",
+            "orden",
             "identificacion_circuito",
             "periodo_facturacion",
+            "um",
             "descripcion",
             "tipo_cargo",
+            "impuesto",
+            "monto",
+            "source_type",
             "CreatedDate",
         }
 
@@ -234,14 +292,21 @@ class DatabaseManager:
             """
             CREATE TABLE IF NOT EXISTS FacturasDetalle (
                 ID INT AUTO_INCREMENT PRIMARY KEY,
-                invoice_numero VARCHAR(100) NOT NULL,
-                orden_numero INT NULL,
+                invoice_key VARCHAR(150) NOT NULL,
+                invoice_numero VARCHAR(150) NULL,
+                nro INT NULL,
+                orden VARCHAR(100) NULL,
                 identificacion_circuito VARCHAR(200) NULL,
                 periodo_facturacion VARCHAR(100) NULL,
+                um VARCHAR(50) NULL,
                 descripcion VARCHAR(500) NULL,
                 tipo_cargo VARCHAR(255) NULL,
+                impuesto VARCHAR(50) NULL,
+                monto DECIMAL(18,2) NULL,
+                source_type VARCHAR(20) NULL,
                 CreatedDate DATETIME DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_invoice_numero (invoice_numero)
+                UNIQUE KEY uniq_invoice_line (invoice_key, nro),
+                INDEX idx_invoice_key (invoice_key)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """
         )
@@ -270,6 +335,7 @@ class DatabaseManager:
                 f"""
                 CREATE TABLE IF NOT EXISTS Facturas (
                     {column_defs}
+                    , UNIQUE KEY uniq_invoice_key (invoice_key)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 """
             )
@@ -281,6 +347,10 @@ class DatabaseManager:
                 cursor.execute(
                     f"ALTER TABLE Facturas ADD COLUMN `{column_name}` {column_definition}"
                 )
+        try:
+            cursor.execute("ALTER TABLE Facturas ADD UNIQUE KEY uniq_invoice_key (invoice_key)")
+        except Exception:
+            pass
         conn.commit()
 
 

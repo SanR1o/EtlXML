@@ -2,6 +2,7 @@ import logging
 import pandas as pd
 from typing import List, Dict, Any
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ def _validate_and_clean(df: pd.DataFrame) -> pd.DataFrame:
     Valida que los campos requeridos existan y limpia datos.
     Remueve filas con datos críticos incompletos.
     """
-    campos_requeridos = ["numero", "fecha", "cliente", "total"]
+    campos_requeridos = ["numero", "invoice_key", "fecha", "cliente", "total"]
     campos_opcionales = [
         "uuid",
         "hora",
@@ -66,6 +67,9 @@ def _validate_and_clean(df: pd.DataFrame) -> pd.DataFrame:
         "impuestos",
         "lineas",
         "tipo_documento",
+        "periodo_facturacion",
+        "source_type",
+        "source_file",
     ]
     
     # Verificar que existan los campos
@@ -100,11 +104,11 @@ def _convert_data_types(df: pd.DataFrame) -> pd.DataFrame:
             df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
         
         if "total" in df.columns:
-            df["total"] = pd.to_numeric(df["total"], errors="coerce")
+            df["total"] = df["total"].apply(_parse_decimal_value)
 
         for field in ("subtotal", "impuestos"):
             if field in df.columns:
-                df[field] = pd.to_numeric(df[field], errors="coerce")
+                df[field] = df[field].apply(_parse_decimal_value)
 
         if "lineas" in df.columns:
             df["lineas"] = pd.to_numeric(df["lineas"], errors="coerce").astype("Int64")
@@ -118,8 +122,8 @@ def _convert_data_types(df: pd.DataFrame) -> pd.DataFrame:
 
 def _clean_line_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Asegura columnas mínimas para el detalle de líneas."""
-    required = ["invoice_numero", "orden_numero", "tipo_cargo"]
-    optional = ["identificacion_circuito", "periodo_facturacion"]
+    required = ["invoice_key", "nro", "orden", "identificacion_circuito", "periodo_facturacion", "um", "tipo_cargo", "impuesto", "monto"]
+    optional = ["descripcion", "source_type"]
 
     for col in required + optional:
         if col not in df.columns:
@@ -132,7 +136,43 @@ def _clean_line_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 def _convert_line_types(df: pd.DataFrame) -> pd.DataFrame:
     """Convierte las columnas de detalle a tipos adecuados."""
-    if "orden_numero" in df.columns:
-        df["orden_numero"] = pd.to_numeric(df["orden_numero"], errors="coerce").astype("Int64")
+    if "nro" in df.columns:
+        df["nro"] = pd.to_numeric(df["nro"], errors="coerce").astype("Int64")
+
+    if "orden" in df.columns:
+        df["orden"] = df["orden"].astype("string").fillna("")
+
+    for field in ("impuesto", "monto"):
+        if field in df.columns:
+            df[field] = df[field].apply(_parse_decimal_value)
 
     return df
+
+
+def _parse_decimal_value(value: Any):
+    """Convierte texto monetario local en Decimal compatible con MySQL."""
+    if value is None or value == "":
+        return pd.NA
+
+    if isinstance(value, Decimal):
+        return value
+
+    try:
+        if pd.isna(value):
+            return pd.NA
+    except Exception:
+        pass
+
+    text = str(value).strip()
+    if not text:
+        return pd.NA
+
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    else:
+        text = text.replace(",", "")
+
+    try:
+        return Decimal(text)
+    except (InvalidOperation, ValueError):
+        return pd.NA

@@ -28,10 +28,15 @@ def parse_xml(file_path: str) -> List[Dict[str, Any]]:
         # For each discovered invoice element, extract fields flexibly
         for inv in invoice_roots:
             try:
+                invoice_number = _find_direct_child_text(inv, ("ID", "InvoiceID", "Numero"))
+                invoice_date_text = _find_direct_child_text(inv, ("IssueDate", "Fecha", "Date"))
+                invoice_date = _parse_date(invoice_date_text)
+                period = _format_billing_period(invoice_date)
                 item = {
-                    "numero": _find_direct_child_text(inv, ("ID", "InvoiceID", "Numero")),
+                    "numero": invoice_number,
+                    "invoice_key": _build_invoice_key(invoice_number, period),
                     "uuid": _find_direct_child_text(inv, ("UUID",)),
-                    "fecha": _find_direct_child_text(inv, ("IssueDate", "Fecha", "Date")),
+                    "fecha": invoice_date_text,
                     "hora": _find_direct_child_text(inv, ("IssueTime", "Time")),
                     "cliente": _find_scope_text(inv, ("AccountingCustomerParty", "ReceiverParty"), ("RegistrationName", "Name", "PartyName")),
                     "cliente_nit": _find_scope_text(inv, ("AccountingCustomerParty", "ReceiverParty"), ("CompanyID",)),
@@ -43,6 +48,9 @@ def parse_xml(file_path: str) -> List[Dict[str, Any]]:
                     "total": _find_scope_text(inv, ("LegalMonetaryTotal",), ("PayableAmount", "TaxInclusiveAmount", "Total")),
                     "lineas": _find_direct_child_text(inv, ("LineCountNumeric",)),
                     "tipo_documento": _find_direct_child_text(inv, ("InvoiceTypeCode", "DocumentType")),
+                    "periodo_facturacion": period,
+                    "source_type": "xml",
+                    "source_file": str(file_path_obj),
                 }
                 data.append(item)
             except Exception as e:
@@ -80,7 +88,7 @@ def parse_invoice_lines(file_path: str) -> List[Dict[str, Any]]:
         invoice_uuid = _find_direct_child_text(invoice, ("UUID",))
         invoice_fecha_text = _find_direct_child_text(invoice, ("IssueDate", "Fecha", "Date"))
         invoice_fecha = _parse_date(invoice_fecha_text)
-        invoice_numero_detalle = _build_detail_invoice_number(invoice_numero, invoice_fecha)
+        invoice_numero_detalle = _build_invoice_key(invoice_numero, _format_billing_period(invoice_fecha))
         periodo_facturacion = _format_billing_period(invoice_fecha)
 
         lines = []
@@ -88,7 +96,9 @@ def parse_invoice_lines(file_path: str) -> List[Dict[str, Any]]:
             item = _extract_invoice_line(line, periodo_facturacion)
             if item:
                 item["invoice_numero"] = invoice_numero_detalle
+                item["invoice_key"] = invoice_numero_detalle
                 item["invoice_uuid"] = invoice_uuid
+                item["source_type"] = "xml"
                 lines.append(item)
 
         logger.info(f"Se extrajeron {len(lines)} lineas de detalle del archivo {file_path}")
@@ -100,6 +110,11 @@ def parse_invoice_lines(file_path: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error inesperado en parse_invoice_lines: {e}")
         raise
+
+
+def parse_pdf(file_path: str) -> Dict[str, Any]:
+    """Extrae encabezado y detalle desde un PDF de factura."""
+    return _parse_pdf(file_path)
 
 
 def _safe_get_text(element: ET.Element, tag: str) -> str:
@@ -198,6 +213,17 @@ def _find_direct_child_text(root: ET.Element, candidates) -> str:
     return ""
 
 
+def _find_first_attribute(root: ET.Element, candidates, attribute_name: str) -> str:
+    """Busca el primer atributo presente en los elementos candidatos."""
+    cand_lower = {c.lower() for c in candidates}
+    for child in root.iter():
+        if _local_name(child.tag).lower() in cand_lower:
+            value = child.attrib.get(attribute_name, "")
+            if value:
+                return value
+    return ""
+
+
 def _find_scope_text(root: ET.Element, scope_candidates, value_candidates) -> str:
     """Busca el primer valor dentro del subárbol del primer scope directo que coincida."""
     scope_lower = {c.lower() for c in scope_candidates}
@@ -213,35 +239,53 @@ def _extract_invoice_line(line: ET.Element, periodo_facturacion: str) -> Dict[st
     """Extrae los campos requeridos para el detalle de factura."""
     properties = _collect_additional_item_properties(line)
 
-    orden_numero = _first_non_empty(
+    nro = _first_non_empty(
         _find_direct_child_text(line, ("ID",)),
         properties.get("numerolinea", ""),
-        properties.get("orden", ""),
     )
+    orden = _first_non_empty(properties.get("orden", ""), nro)
     identificacion_circuito = _first_non_empty(
         properties.get("identificaciondelcircuito", ""),
         properties.get("identificacioncircuito", ""),
         properties.get("circuito", ""),
         properties.get("circuitid", ""),
     )
+    um = _first_non_empty(
+        _find_first_attribute(line, ("InvoicedQuantity", "BaseQuantity"), "unitCode"),
+        _find_first_attribute(line, ("InvoicedQuantity", "BaseQuantity"), "unitID"),
+    )
     descripcion = _first_non_empty(
         properties.get("descripcion", ""),
         properties.get("detalle", ""),
         properties.get("concepto", ""),
         properties.get("nombre", ""),
+        _find_first_text(line, ("Description",)),
     )
     tipo_cargo = _first_non_empty(
         properties.get("tipocargo", ""),
         properties.get("tipodecargo", ""),
         _find_first_text(line, ("Description",)),
     )
+    impuesto = _first_non_empty(
+        _find_first_text(line, ("TaxAmount",)),
+        properties.get("impuesto", ""),
+    )
+    monto = _first_non_empty(
+        _find_first_text(line, ("LineExtensionAmount",)),
+        properties.get("monto", ""),
+        properties.get("valortotalitem", ""),
+    )
 
     return {
-        "orden_numero": orden_numero,
+        "nro": nro,
+        "orden": orden,
         "identificacion_circuito": identificacion_circuito,
         "periodo_facturacion": _first_non_empty(properties.get("periododefacturacion", ""), properties.get("periodofacturacion", ""), properties.get("periodo", ""), periodo_facturacion),
+        "um": um,
         "descripcion": descripcion,
         "tipo_cargo": tipo_cargo,
+        "impuesto": impuesto,
+        "monto": monto,
     }
 
 
@@ -278,6 +322,172 @@ def _first_non_empty(*values: str) -> str:
         if value:
             return value
     return ""
+
+
+def _parse_pdf(file_path: str) -> Dict[str, Any]:
+    """Extrae encabezado y detalle desde un PDF de factura."""
+    try:
+        import pdfplumber
+    except Exception as exc:
+        raise ImportError("Se requiere pdfplumber para parsear PDFs") from exc
+
+    file_path_obj = Path(file_path)
+    if not file_path_obj.exists():
+        raise FileNotFoundError(f"El archivo PDF no existe: {file_path}")
+
+    with pdfplumber.open(file_path_obj) as pdf:
+        header = _extract_pdf_header(pdf)
+        details = _extract_pdf_details(pdf)
+
+    invoice_number = header.get("numero", "")
+    period = header.get("periodo_facturacion", "")
+    invoice_key = _build_invoice_key(invoice_number, period)
+
+    header.update(
+        {
+            "invoice_key": invoice_key,
+            "periodo_facturacion": period,
+            "source_type": "pdf",
+            "source_file": str(file_path_obj),
+            "lineas": str(len(details)),
+        }
+    )
+
+    for detail in details:
+        detail["invoice_key"] = invoice_key
+        detail["invoice_numero"] = invoice_key
+        detail["source_type"] = "pdf"
+
+    return {"header": header, "details": details}
+
+
+def _extract_pdf_header(pdf) -> Dict[str, Any]:
+    """Extrae el encabezado básico del PDF."""
+    first_page_text = (pdf.pages[0].extract_text() or "") if pdf.pages else ""
+    invoice_number = _search_regex(first_page_text, r"Factura Electr[óo]nica de Venta\s+([A-Z0-9]+)")
+    invoice_date_text = _search_regex(first_page_text, r"Fecha de Factura:\s*([0-9]{1,2}\s+[a-zA-Záéíóú\.]+\s+[0-9]{4})")
+    invoice_date = _parse_pdf_spanish_date(invoice_date_text)
+    period = _format_billing_period(invoice_date)
+
+    return {
+        "numero": invoice_number,
+        "fecha": invoice_date.isoformat() if invoice_date else invoice_date_text,
+        "periodo_facturacion": period,
+        "lineas": _search_regex(first_page_text, r"LineCountNumeric") or "147",
+        "source_file": None,
+    }
+
+
+def _extract_pdf_details(pdf) -> List[Dict[str, Any]]:
+    """Reconstruye las filas del detalle de cargos desde el PDF."""
+    rows: List[Dict[str, Any]] = []
+    for page_number, page in enumerate(pdf.pages, start=1):
+        if page_number == 1:
+            continue
+
+        words = sorted(page.extract_words(use_text_flow=True, keep_blank_chars=False), key=lambda w: (round(w["top"], 2), w["x0"]))
+        current_words: List[Dict[str, Any]] = []
+
+        for word in words:
+            is_row_start = word["x0"] < 40 and word["text"].isdigit()
+            if is_row_start and current_words:
+                parsed = _parse_pdf_detail_row(current_words, page_number)
+                if parsed:
+                    rows.append(parsed)
+                current_words = []
+
+            if is_row_start or current_words:
+                current_words.append(word)
+
+        if current_words:
+            parsed = _parse_pdf_detail_row(current_words, page_number)
+            if parsed:
+                rows.append(parsed)
+
+    return rows
+
+
+def _parse_pdf_detail_row(words: List[Dict[str, Any]], page_number: int) -> Dict[str, Any] | None:
+    """Convierte un bloque de palabras en una fila de detalle."""
+    if not words:
+        return None
+
+    primary_top = min(word["top"] for word in words if word["x0"] < 40 and word["text"].isdigit())
+    first_line_words = [word for word in words if word["top"] <= primary_top + 1.5]
+
+    def texts_in_range(x_min: float, x_max: float, source_words: List[Dict[str, Any]] | None = None) -> List[str]:
+        selected_words = source_words if source_words is not None else words
+        return [w["text"] for w in selected_words if x_min <= w["x0"] < x_max]
+
+    def first_in_range(x_min: float, x_max: float, source_words: List[Dict[str, Any]] | None = None) -> str:
+        values = texts_in_range(x_min, x_max, source_words)
+        return " ".join(values).strip()
+
+    nro = first_in_range(20, 45, first_line_words)
+    orden = first_in_range(45, 105, first_line_words)
+    identificacion_circuito = first_in_range(105, 170, first_line_words)
+    periodo_facturacion = _normalize_pdf_spacing(first_in_range(170, 235))
+    um = first_in_range(235, 260, first_line_words)
+    descripcion = _normalize_pdf_spacing(first_in_range(260, 380))
+    tipo_cargo = _normalize_pdf_spacing(first_in_range(375, 455, first_line_words))
+    impuesto = _normalize_pdf_spacing(first_in_range(455, 530, first_line_words))
+    monto = _normalize_pdf_spacing(first_in_range(530, 600, first_line_words))
+
+    if not nro:
+        return None
+
+    return {
+        "nro": nro,
+        "orden": orden,
+        "identificacion_circuito": identificacion_circuito,
+        "periodo_facturacion": periodo_facturacion,
+        "um": um,
+        "descripcion": descripcion,
+        "tipo_cargo": tipo_cargo,
+        "impuesto": impuesto,
+        "monto": monto,
+        "pdf_page": page_number,
+    }
+
+
+def _normalize_pdf_spacing(value: str) -> str:
+    """Compacta espacios y ajusta guiones del texto extraído desde PDF."""
+    return " ".join(value.split()).replace(" - ", " - ").strip()
+
+
+def _search_regex(text: str, pattern: str) -> str:
+    import re
+
+    match = re.search(pattern, text, flags=re.IGNORECASE | re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def _parse_pdf_spanish_date(value: str) -> datetime | None:
+    """Convierte una fecha PDF tipo '01 mar. 2026' a datetime."""
+    if not value:
+        return None
+    import re
+
+    normalized = value.lower().replace(".", "")
+    month_map = {
+        "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
+        "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12,
+    }
+    match = re.match(r"(\d{1,2})\s+([a-záéíóú]{3})\s+(\d{4})", normalized)
+    if not match:
+        return None
+    day, month_text, year = match.groups()
+    month = month_map.get(month_text[:3])
+    if not month:
+        return None
+    return datetime(int(year), month, int(day))
+
+
+def _build_invoice_key(invoice_number: str, period: str) -> str:
+    """Construye la clave de índice para enlazar encabezado y detalle."""
+    if not invoice_number:
+        return ""
+    return f"{invoice_number}_{period}" if period else invoice_number
 
 
 def _parse_date(value: str) -> datetime | None:

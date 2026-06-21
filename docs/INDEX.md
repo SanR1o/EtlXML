@@ -9,10 +9,11 @@ Documentación técnica detallada de cada componente del sistema.
 | Documento | Descripción |
 |-----------|-------------|
 | [INSTALACION.md](INSTALACION.md) | Instalación y ejecución rápida paso a paso |
+| [FASE2_XML_PDF.md](FASE2_XML_PDF.md) | Guía nueva de uso, arquitectura y motivos de las herramientas |
 | [CONFIG.md](CONFIG.md) | Configuración centralizada y variables de entorno |
-| [PARSER.md](PARSER.md) | Extracción de datos desde archivos XML |
+| [PARSER.md](PARSER.md) | Extracción de datos desde archivos XML y PDF |
 | [TRANSFORM.md](TRANSFORM.md) | Validación, limpieza y transformación de datos |
-| [LOAD_SQL.md](LOAD_SQL.md) | Carga de datos a base de datos MSSQL |
+| [LOAD_SQL.md](LOAD_SQL.md) | Carga de datos a base de datos MySQL |
 | [MAIN.md](MAIN.md) | Orquestador del pipeline ETL |
 
 ## Flujo del Proyecto
@@ -24,8 +25,8 @@ Documentación técnica detallada de cada componente del sistema.
    └─ Coordina las 3 fases:
 
 2. EXTRACCIÓN: parser.py
-   └─ Lee fichero XML
-   └─ Extrae datos de facturas
+   └─ Lee ficheros XML y PDF
+   └─ Extrae datos de facturas y detalle
    └─ Valida estructura
    └─ Retorna lista de diccionarios
 
@@ -37,7 +38,7 @@ Documentación técnica detallada de cada componente del sistema.
    └─ Retorna DataFrame limpio
 
 4. CARGA: load_sql.py
-   └─ Conecta a MSSQL
+   └─ Conecta a MySQL
    └─ Inserta registros en transacción
    └─ Maneja errores
    └─ Cierra conexión seguramente
@@ -52,8 +53,8 @@ Documentación técnica detallada de cada componente del sistema.
 
 ### Extracción de Datos
 - **Archivo**: [parser.py](PARSER.md)
-- **Función principal**: `parse_xml(file_path: str)`
-- **Descripción**: Lee archivos XML y extrae información de facturas
+- **Función principal**: `parse_xml(file_path: str)` / `parse_pdf(file_path: str)`
+- **Descripción**: Lee archivos XML y PDF y extrae información de facturas
 - **Salida**: `List[Dict[str, Any]]`
 
 ### Transformación y Validación
@@ -65,7 +66,7 @@ Documentación técnica detallada de cada componente del sistema.
 ### Carga de Base de Datos
 - **Archivo**: [load_sql.py](LOAD_SQL.md)
 - **Clase principal**: `DatabaseManager`
-- **Descripción**: Gestiona conexión a MSSQL e inserción de registros
+- **Descripción**: Gestiona conexión a MySQL e inserción de registros
 - **Método**: `insert_data(df: pd.DataFrame) -> int`
 
 ### Configuración
