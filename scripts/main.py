@@ -6,8 +6,9 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from parser import parse_xml
-from transform import transform_to_df
-from load_sql import insert_data
+from parser import parse_invoice_lines
+from transform import transform_to_df, transform_lines_to_df
+from load_sql import insert_data, insert_line_data
 from config import Config
 
 # Configurar logging
@@ -45,10 +46,12 @@ def main(xml_file: Optional[str] = None) -> None:
         # Extracción
         logger.info(f"Extrayendo datos de {xml_file}")
         data = parse_xml(xml_file)
+        detail_data = parse_invoice_lines(xml_file)
         
         # Transformación
         logger.info("Transformando datos")
         df = transform_to_df(data)
+        detail_df = transform_lines_to_df(detail_data)
         
         if df.empty:
             logger.warning("No hay datos para cargar después de transformación")
@@ -57,8 +60,11 @@ def main(xml_file: Optional[str] = None) -> None:
         # Carga
         logger.info("Cargando datos a base de datos")
         inserted_rows = insert_data(df)
+        inserted_detail_rows = insert_line_data(detail_df)
         
-        logger.info(f"Proceso ETL completado exitosamente. Registros procesados: {inserted_rows}")
+        logger.info(
+            f"Proceso ETL completado exitosamente. Encabezados: {inserted_rows}. Detalles: {inserted_detail_rows}"
+        )
         
     except Exception as e:
         logger.error(f"Error fatal en proceso ETL: {e}", exc_info=True)

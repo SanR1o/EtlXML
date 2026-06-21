@@ -9,6 +9,7 @@ Este proyecto implementa un pipeline ETL robusto que:
 - Aplica validación y limpieza de datos
 - Carga los datos en MSSQL de forma eficiente
 - Registra todo el proceso con logging detallado
+- Guarda encabezado y detalle de factura en MySQL
 
 ## Inicio Rápido
 
@@ -19,7 +20,7 @@ Para instalación y ejecución paso a paso, usa esta guía:
 ## Requisitos
 
 - Python 3.7 o superior
-- MSSQL Server con ODBC Driver 17
+- MySQL Server 8 o superior
 - Las dependencias en `requirements.txt`
 
 ## Instalación
@@ -102,6 +103,7 @@ EtlXML/
 - Type hints para mejorar mantenibilidad
 - Support para múltiples archivos XML
 - Transacciones de base de datos para integridad
+- Extracción de encabezado y detalle de la factura
 
 ## Mejores Prácticas Implementadas
 
